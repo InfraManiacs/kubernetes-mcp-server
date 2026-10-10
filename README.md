@@ -285,6 +285,7 @@ The following sets of tools are available (toolsets marked with ✓ in the Defau
 | kiali     | Most common tools for managing Kiali, check the [Kiali documentation](https://github.com/containers/kubernetes-mcp-server/blob/main/docs/KIALI.md) for more details.                                                                    |         |
 | kubevirt  | KubeVirt virtual machine management tools, check the [KubeVirt documentation](https://github.com/containers/kubernetes-mcp-server/blob/main/docs/kubevirt.md) for more details.                                                         |         |
 | netobserv | Network observability tools backed by the NetObserv console plugin API (flows, metrics, export). Check the [NetObserv documentation](https://github.com/containers/kubernetes-mcp-server/blob/main/docs/NETOBSERV.md) for more details. |         |
+| sre       | Narrow, individually-named day-2 operations (rolling restart, scale, Argo CD refresh and sync) for agent-driven SRE work                                                                                                                |         |
 | tekton    | Tekton pipeline management tools for Pipelines, PipelineRuns, Tasks, TaskRuns, and troubleshooting.                                                                                                                                     |         |
 
 <!-- AVAILABLE-TOOLSETS-END -->
@@ -771,6 +772,39 @@ Examples:
   - `recordType` (`string`) - Flow record type filter.
   - `startTime` (`integer`) - Start of time range as Unix epoch seconds. Overrides timeRange when set.
   - `timeRange` (`integer`) - Lookback window in seconds when startTime is omitted. Default 300.
+
+</details>
+
+<details>
+
+<summary>sre</summary>
+
+- **sre_restart_workload** - Perform a rolling restart of a single Kubernetes workload, equivalent to `kubectl rollout restart`. Patches only the pod template's restartedAt annotation, which causes the controller to roll pods one at a time, honouring the workload's own update strategy and PodDisruptionBudget. Does not change the workload's spec, image, or replica count.
+  - `kind` (`string`) **(required)** - Kind of the workload. One of: Deployment, StatefulSet, DaemonSet
+  - `name` (`string`) **(required)** - Name of the workload to restart
+  - `namespace` (`string`) **(required)** - Namespace of the workload to restart
+
+- **sre_scale_workload** - Set the replica count of a single Deployment or StatefulSet. Changes only the replica count — no other field of the workload is touched. The replica count is bounded by the server's configured maximum.
+  - `kind` (`string`) **(required)** - Kind of the workload. One of: Deployment, StatefulSet
+  - `name` (`string`) **(required)** - Name of the workload to scale
+  - `namespace` (`string`) **(required)** - Namespace of the workload to scale
+  - `replicas` (`integer`) **(required)** - Desired replica count. Must be zero or greater, and no greater than the server's configured maximum
+
+- **sre_argocd_list** - List Argo CD Applications with their sync status, health status and revision, as a compact table. Use this rather than a generic resource list when surveying GitOps drift — it returns one line per application instead of full manifests.
+  - `namespace` (`string`) - Namespace holding the Application objects. Defaults to the server's configured Argo CD namespace
+  - `outOfSyncOnly` (`boolean`) - If true, return only applications that are not Synced or not Healthy
+
+- **sre_argocd_refresh** - Ask Argo CD to re-compare one Application against git, equivalent to `argocd app get --refresh`. This recomputes drift only — it does NOT apply anything to the cluster and changes no live resource. Use it before reading sync status to be sure the status is current.
+  - `hard` (`boolean`) - If true, perform a hard refresh, which also re-renders manifests from source instead of using the cache
+  - `name` (`string`) **(required)** - Name of the Argo CD Application
+  - `namespace` (`string`) - Namespace holding the Application object. Defaults to the server's configured Argo CD namespace
+
+- **sre_argocd_sync** - Trigger an Argo CD sync of one Application, equivalent to `argocd app sync`. This APPLIES the git-declared state to the live cluster and can restart or replace running workloads. Pruning is disabled unless explicitly requested.
+  - `dryRun` (`boolean`) - If true, Argo CD computes the sync without applying it
+  - `name` (`string`) **(required)** - Name of the Argo CD Application to sync
+  - `namespace` (`string`) - Namespace holding the Application object. Defaults to the server's configured Argo CD namespace
+  - `prune` (`boolean`) - If true, delete live resources that no longer exist in git. Defaults to false. This is the destructive half of a sync
+  - `revision` (`string`) - Optional git revision to sync to. Defaults to the Application's configured target revision
 
 </details>
 

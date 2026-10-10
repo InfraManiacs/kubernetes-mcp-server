@@ -467,6 +467,7 @@ Toolsets group related tools together. Enable only the toolsets you need to redu
 | kiali     | Most common tools for managing Kiali, check the [Kiali documentation](https://github.com/containers/kubernetes-mcp-server/blob/main/docs/KIALI.md) for more details.                                                                    |         |
 | kubevirt  | KubeVirt virtual machine management tools, check the [KubeVirt documentation](https://github.com/containers/kubernetes-mcp-server/blob/main/docs/kubevirt.md) for more details.                                                         |         |
 | netobserv | Network observability tools backed by the NetObserv console plugin API (flows, metrics, export). Check the [NetObserv documentation](https://github.com/containers/kubernetes-mcp-server/blob/main/docs/NETOBSERV.md) for more details. |         |
+| sre       | Narrow, individually-named day-2 operations (rolling restart, scale, Argo CD refresh and sync) for agent-driven SRE work                                                                                                                |         |
 | tekton    | Tekton pipeline management tools for Pipelines, PipelineRuns, Tasks, TaskRuns, and troubleshooting.                                                                                                                                     |         |
 
 <!-- AVAILABLE-TOOLSETS-END -->
@@ -885,8 +886,41 @@ The Helm toolset supports an optional `allowed_registries` allowlist to restrict
 
 **Accepted risk:** bare filesystem paths (e.g. `/absolute/path`, `./relative/path`) are not blocked when no allowlist is configured, because they are indistinguishable from Helm repository references at the string level. When the server runs in a container, the blast radius is limited to the container filesystem. To fully restrict chart sources, configure `allowed_registries`.
 
+#### SRE Configuration
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `allowed_namespaces` | string array | Optional allowlist of namespaces every `sre_*` tool is restricted to. Empty means any namespace the ServiceAccount can reach. |
+| `max_replicas` | integer | Upper bound for `sre_scale_workload`. Defaults to `20`. |
+| `argocd_namespace` | string | Namespace holding Argo CD `Application` objects. Defaults to `argocd`. |
+
+**Example:**
+```toml
+toolsets = ["core", "sre"]
+
+[toolset_configs.sre]
+allowed_namespaces = ["agents", "argocd", "platform-data"]
+max_replicas = 10
+argocd_namespace = "argocd"
+```
+
+**Behavior:**
+
+- These bounds are a second line of defence *behind* RBAC, not a replacement for
+  it. The ServiceAccount the server runs as should already be unable to do
+  anything these fields forbid; the config exists so the agent gets an error that
+  names the constraint instead of an opaque RBAC denial.
+- `allowed_namespaces` is checked before any request reaches the API server, and
+  applies to the Argo CD tools as well as the workload tools.
+- The toolset respects the process-wide access controls: under `read_only = true`
+  only `sre_argocd_list` is registered, and under `disable_destructive = true`
+  `sre_scale_workload` and `sre_argocd_sync` are dropped while
+  `sre_restart_workload` and `sre_argocd_refresh` remain. Filtering happens at
+  registration, so a tool removed this way cannot be invoked by name either.
+
 Refer to individual toolset documentation for available options:
 - [Kiali Configuration](KIALI.md)
+- [SRE Configuration](SRE.md)
 
 ### Cluster Provider Configuration
 

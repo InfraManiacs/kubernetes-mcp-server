@@ -1,0 +1,113 @@
+# Publish the InfraManiacs fork as a container image to GHCR.
+#
+# WHY THIS EXISTS ALONGSIDE release-image.yml
+#
+# The upstream workflow is gated on `github.repository == 'containers/...'`, so
+# it never runs here — which is correct, and is also why a fork gets no images
+# of its own. This is the fork's equivalent. It is gated the same way, so a fork
+# OF THIS FORK publishes nothing until someone changes the owner deliberately.
+#
+# Differences from upstream, all deliberate:
+#   - GHCR only. There are no Quay credentials in this org and no reason to add
+#     a second registry for an internal image.
+#   - amd64 + arm64 only. Upstream also ships s390x and ppc64le; the clusters
+#     this image runs on are amd64, and arm64 is here so it runs on an Apple
+#     Silicon laptop during development.
+#   - buildx with QEMU in one job rather than four podman jobs plus a manifest
+#     job. Same multi-arch result, far less YAML.
+#
+# PACKAGE VISIBILITY is a one-time, out-of-band setting, not something this
+# workflow can do: GITHUB_TOKEN cannot change it. After the first successful
+# run, make the package public once at
+#   https://github.com/orgs/InfraManiacs/packages/container/kubernetes-mcp-server/settings
+# and it stays public for every later push.
+name: Release fork image to GHCR
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: ghcr.io/inframaniacs/kubernetes-mcp-server
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: infra-release-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and push (amd64, arm64)
+    # Only the InfraManiacs fork publishes. A downstream fork inherits the
+    # workflow but not the behaviour.
+    if: github.repository == 'InfraManiacs/kubernetes-mcp-server'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # The build stamps a version from git describe; without full history
+          # that is just the short sha.
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          # `latest` only ever tracks a release tag, never a main build, so a
+          # cluster pinned to :latest cannot be moved by an ordinary merge.
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,format=long,prefix=sha-
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+          labels: |
+            org.opencontainers.image.title=kubernetes-mcp-server
+            org.opencontainers.image.description=Kubernetes MCP server with the sre toolset (rolling restart, scale, Argo CD refresh and sync)
+            org.opencontainers.image.vendor=InfraManiacs
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          {
+            echo "### Published"
+            echo
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
