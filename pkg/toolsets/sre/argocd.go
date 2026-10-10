@@ -294,7 +294,7 @@ func argoCDSync(params api.ToolHandlerParams) (*api.ToolCallResult, error) {
 	if phase, found, _ := unstructured.NestedString(existing.Object, "status", "operationState", "phase"); found &&
 		(phase == "Running" || phase == "Terminating") {
 		return api.NewToolCallResult("", fmt.Errorf(
-			"Argo CD application %s/%s already has an operation in phase %q; wait for it to finish before syncing again",
+			"application %s/%s already has an Argo CD operation in phase %q; wait for it to finish before syncing again",
 			namespace, name, phase)), nil
 	}
 
